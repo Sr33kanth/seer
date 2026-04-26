@@ -8,7 +8,8 @@ export async function GET() {
   // DB health
   try {
     const sql = getDb();
-    const rows = await sql`SELECT COUNT(*)::int AS count FROM watchlist`;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rows = (await sql`SELECT COUNT(*)::int AS count FROM watchlist`) as any[];
     const count = (rows[0] as { count: number }).count;
     checks.db = { ok: true, detail: `${count} symbol${count !== 1 ? "s" : ""}` };
   } catch (e) {
