@@ -32,4 +32,18 @@ export async function ensureSchema(): Promise<void> {
     )
   `;
   await sql`CREATE INDEX IF NOT EXISTS theses_symbol_idx ON theses (symbol, created_at DESC)`;
+  await sql`
+    CREATE TABLE IF NOT EXISTS signals (
+      id         BIGSERIAL PRIMARY KEY,
+      scan_id    TEXT      NOT NULL,
+      symbol     TEXT      NOT NULL,
+      source     TEXT      NOT NULL,
+      tags       TEXT[]    NOT NULL,
+      score      INT       NOT NULL,
+      detail     TEXT      NOT NULL,
+      raw_url    TEXT,
+      created_at BIGINT    NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW())::BIGINT
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS signals_scan_idx ON signals (scan_id, score DESC)`;
 }

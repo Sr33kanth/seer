@@ -639,6 +639,12 @@ export default function Home() {
           <span style={{ fontFamily: "var(--font-fraunces), serif", fontSize: 22, fontWeight: 300, color: "var(--text)", letterSpacing: "-0.01em" }}>Seer</span>
         </div>
         <div style={{ flex: 1 }} />
+        <a href="/scan" style={{ fontSize: 12, color: "var(--text-secondary)", textDecoration: "none", letterSpacing: "0.05em", border: "1px solid var(--border)", borderRadius: 5, padding: "5px 12px", transition: "all 0.15s" }}
+          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = "var(--gold)"; (e.currentTarget as HTMLElement).style.borderColor = "var(--gold-dim)"; }}
+          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = "var(--text-secondary)"; (e.currentTarget as HTMLElement).style.borderColor = "var(--border)"; }}
+        >
+          Signal Scanner ↗
+        </a>
         {/* System status pill */}
         <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-secondary)" }}>
           <span style={{ width: 6, height: 6, borderRadius: "50%", background: statusColor, transition: "background 0.3s" }} />
