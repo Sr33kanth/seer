@@ -350,6 +350,7 @@ function TickerCard({
   onRemove: () => void;
   aiEnabled: boolean;
 }) {
+  const [expanded, setExpanded] = useState(false);
   const [showThesis, setShowThesis] = useState(false);
   const q = quote;
   const isUp = (q?.changePct ?? 0) > 0;
@@ -374,11 +375,14 @@ function TickerCard({
         transition: "opacity 0.2s, border-color 0.15s",
       }}
     >
-      {/* Top row: symbol, name, price, change */}
-      <div style={{ display: "flex", alignItems: "center", padding: "16px 20px", gap: 16, borderBottom: q && !q.error ? "1px solid var(--border-subtle)" : "none" }}>
-        <span style={{ width: 3, height: 40, borderRadius: 2, background: changeColor, flexShrink: 0, transition: "background 0.4s" }} />
+      {/* Top row — click to expand/collapse */}
+      <div
+        onClick={() => q && !q.error && setExpanded(v => !v)}
+        style={{ display: "flex", alignItems: "center", padding: "14px 20px", gap: 16, cursor: q && !q.error ? "pointer" : "default", userSelect: "none" }}
+      >
+        <span style={{ width: 3, height: 36, borderRadius: 2, background: changeColor, flexShrink: 0, transition: "background 0.4s" }} />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontFamily: "var(--font-space-mono), monospace", fontSize: 17, fontWeight: 700, letterSpacing: "0.06em", color: "var(--text)" }}>
+          <div style={{ fontFamily: "var(--font-space-mono), monospace", fontSize: 16, fontWeight: 700, letterSpacing: "0.06em", color: "var(--text)" }}>
             {item.symbol}
           </div>
           {q && !q.error && (
@@ -394,7 +398,7 @@ function TickerCard({
         {/* Price block */}
         {q && !q.error && (
           <div style={{ textAlign: "right", flexShrink: 0 }}>
-            <div style={{ fontFamily: "var(--font-space-mono), monospace", fontSize: 22, fontWeight: 700, color: "var(--text)", letterSpacing: "-0.01em" }}>
+            <div style={{ fontFamily: "var(--font-space-mono), monospace", fontSize: 20, fontWeight: 700, color: "var(--text)", letterSpacing: "-0.01em" }}>
               {q.currency === "USD" ? "$" : ""}{fmtPrice(q.price)}
             </div>
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 2, alignItems: "center" }}>
@@ -410,9 +414,8 @@ function TickerCard({
                 </span>
               )}
             </div>
-            {/* Extended hours price */}
             {extPrice != null && extLabel && (
-              <div style={{ marginTop: 4, fontSize: 11, color: "var(--text-secondary)", fontFamily: "var(--font-space-mono)" }}>
+              <div style={{ marginTop: 3, fontSize: 11, color: "var(--text-secondary)", fontFamily: "var(--font-space-mono)" }}>
                 {extLabel}: ${fmtPrice(extPrice)}{" "}
                 <span style={{ color: (extChangePct ?? 0) >= 0 ? "#4ade80" : "#f87171" }}>
                   {fmtPct(extChangePct)}
@@ -422,62 +425,66 @@ function TickerCard({
           </div>
         )}
 
+        {/* Chevron */}
+        {q && !q.error && (
+          <span style={{ fontSize: 12, color: "var(--text-muted)", flexShrink: 0, transition: "transform 0.2s", transform: expanded ? "rotate(180deg)" : "rotate(0deg)", display: "inline-block" }}>
+            ▾
+          </span>
+        )}
+
         <button
-          onClick={onRemove}
+          onClick={(e) => { e.stopPropagation(); onRemove(); }}
           disabled={removing}
           title={`Remove ${item.symbol}`}
           style={{ background: "none", border: "1px solid transparent", borderRadius: 4, color: "var(--text-muted)", cursor: "pointer", padding: "6px 10px", fontSize: 12, transition: "all 0.15s", flexShrink: 0 }}
           onMouseEnter={(e) => { (e.target as HTMLElement).style.color = "var(--danger)"; (e.target as HTMLElement).style.borderColor = "rgba(217,95,95,0.3)"; }}
           onMouseLeave={(e) => { (e.target as HTMLElement).style.color = "var(--text-muted)"; (e.target as HTMLElement).style.borderColor = "transparent"; }}
         >
-          Remove
+          ✕
         </button>
       </div>
 
-      {/* Stats grid */}
-      {q && !q.error && (
-        <div style={{ padding: "14px 20px 14px 39px", display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: "14px 24px" }}>
-          <Stat label="Open" value={`$${fmtPrice(q.open)}`} />
-          <Stat label="Prev Close" value={`$${fmtPrice(q.prevClose)}`} />
-          <Stat label="Day High" value={`$${fmtPrice(q.dayHigh)}`} color="#4ade80" />
-          <Stat label="Day Low" value={`$${fmtPrice(q.dayLow)}`} color="#f87171" />
-          <Stat label="Volume" value={fmtVol(q.volume)} />
-          <Stat label="Avg Vol" value={fmtVol(q.avgVolume)} />
-          <Stat label="Market Cap" value={fmtLarge(q.marketCap)} />
-          <Stat label="P/E (TTM)" value={q.trailingPE != null ? `${q.trailingPE.toFixed(1)}×` : "—"} />
-          <Stat label="P/E (Fwd)" value={q.forwardPE != null ? `${q.forwardPE.toFixed(1)}×` : "—"} />
-          <Stat label="EPS (TTM)" value={q.eps != null ? `$${q.eps.toFixed(2)}` : "—"} />
-          <Stat label="Beta" value={q.beta != null ? q.beta.toFixed(2) : "—"} />
-          <Stat label="Div Yield" value={q.dividendYield != null ? fmtPct(q.dividendYield, 2) : "—"} color={q.dividendYield ? "var(--gold)" : undefined} />
-          <Stat label="50D Avg" value={q.fiftyDayAvg != null ? `$${fmtPrice(q.fiftyDayAvg)}` : "—"} />
-          <Stat label="200D Avg" value={q.twoHundredDayAvg != null ? `$${fmtPrice(q.twoHundredDayAvg)}` : "—"} />
-          <Stat label="P/B Ratio" value={q.priceToBook != null ? `${q.priceToBook.toFixed(2)}×` : "—"} />
-          <Stat label="Profit Margin" value={q.profitMargins != null ? fmtPct(q.profitMargins) : "—"} />
-          {/* 52W range spans full width */}
-          <div style={{ gridColumn: "1 / -1" }}>
-            <WeekRange low={q.fiftyTwoWeekLow} high={q.fiftyTwoWeekHigh} current={q.price} />
+      {/* Expanded: stats grid + thesis */}
+      {expanded && q && !q.error && (
+        <>
+          <div style={{ borderTop: "1px solid var(--border-subtle)", padding: "14px 20px 14px 39px", display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: "14px 24px" }}>
+            <Stat label="Open" value={`$${fmtPrice(q.open)}`} />
+            <Stat label="Prev Close" value={`$${fmtPrice(q.prevClose)}`} />
+            <Stat label="Day High" value={`$${fmtPrice(q.dayHigh)}`} color="#4ade80" />
+            <Stat label="Day Low" value={`$${fmtPrice(q.dayLow)}`} color="#f87171" />
+            <Stat label="Volume" value={fmtVol(q.volume)} />
+            <Stat label="Avg Vol" value={fmtVol(q.avgVolume)} />
+            <Stat label="Market Cap" value={fmtLarge(q.marketCap)} />
+            <Stat label="P/E (TTM)" value={q.trailingPE != null ? `${q.trailingPE.toFixed(1)}×` : "—"} />
+            <Stat label="P/E (Fwd)" value={q.forwardPE != null ? `${q.forwardPE.toFixed(1)}×` : "—"} />
+            <Stat label="EPS (TTM)" value={q.eps != null ? `$${q.eps.toFixed(2)}` : "—"} />
+            <Stat label="Beta" value={q.beta != null ? q.beta.toFixed(2) : "—"} />
+            <Stat label="Div Yield" value={q.dividendYield != null ? fmtPct(q.dividendYield, 2) : "—"} color={q.dividendYield ? "var(--gold)" : undefined} />
+            <Stat label="50D Avg" value={q.fiftyDayAvg != null ? `$${fmtPrice(q.fiftyDayAvg)}` : "—"} />
+            <Stat label="200D Avg" value={q.twoHundredDayAvg != null ? `$${fmtPrice(q.twoHundredDayAvg)}` : "—"} />
+            <Stat label="P/B Ratio" value={q.priceToBook != null ? `${q.priceToBook.toFixed(2)}×` : "—"} />
+            <Stat label="Profit Margin" value={q.profitMargins != null ? fmtPct(q.profitMargins) : "—"} />
+            <div style={{ gridColumn: "1 / -1" }}>
+              <WeekRange low={q.fiftyTwoWeekLow} high={q.fiftyTwoWeekHigh} current={q.price} />
+            </div>
+            {q.weekChange52 != null && (
+              <Stat label="52W Change" value={fmtPct(q.weekChange52)} color={(q.weekChange52 ?? 0) >= 0 ? "#4ade80" : "#f87171"} />
+            )}
+            {q.insiderPct != null && <Stat label="Insider %" value={fmtPct(q.insiderPct)} />}
+            {q.institutionPct != null && <Stat label="Institution %" value={fmtPct(q.institutionPct)} />}
+            {q.shortRatio != null && <Stat label="Short Ratio" value={q.shortRatio.toFixed(1)} />}
+            {q.pegRatio != null && <Stat label="PEG Ratio" value={q.pegRatio.toFixed(2)} />}
+            <div style={{ gridColumn: "1 / -1", marginTop: 4 }}>
+              <button
+                onClick={() => setShowThesis(v => !v)}
+                style={{ background: "none", border: "1px solid var(--border)", borderRadius: 5, padding: "7px 14px", fontSize: 11, letterSpacing: "0.07em", textTransform: "uppercase", color: showThesis ? "var(--gold)" : "var(--text-secondary)", cursor: "pointer", transition: "all 0.15s", borderColor: showThesis ? "var(--gold-dim)" : "var(--border)" }}
+              >
+                {showThesis ? "▲ Hide Thesis Analysis" : "▼ Analyze Thesis"}
+              </button>
+            </div>
           </div>
-          {q.weekChange52 != null && (
-            <Stat label="52W Change" value={fmtPct(q.weekChange52)} color={(q.weekChange52 ?? 0) >= 0 ? "#4ade80" : "#f87171"} />
-          )}
-          {q.insiderPct != null && <Stat label="Insider %" value={fmtPct(q.insiderPct)} />}
-          {q.institutionPct != null && <Stat label="Institution %" value={fmtPct(q.institutionPct)} />}
-          {q.shortRatio != null && <Stat label="Short Ratio" value={q.shortRatio.toFixed(1)} />}
-          {q.pegRatio != null && <Stat label="PEG Ratio" value={q.pegRatio.toFixed(2)} />}
-          {/* Thesis toggle */}
-          <div style={{ gridColumn: "1 / -1", marginTop: 4 }}>
-            <button
-              onClick={() => setShowThesis(v => !v)}
-              style={{ background: "none", border: "1px solid var(--border)", borderRadius: 5, padding: "7px 14px", fontSize: 11, letterSpacing: "0.07em", textTransform: "uppercase", color: showThesis ? "var(--gold)" : "var(--text-secondary)", cursor: "pointer", transition: "all 0.15s", borderColor: showThesis ? "var(--gold-dim)" : "var(--border)" }}
-            >
-              {showThesis ? "▲ Hide Thesis Analysis" : "▼ Analyze Thesis"}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {showThesis && q && !q.error && (
-        <ThesisPanel symbol={item.symbol} quote={q} aiEnabled={aiEnabled} />
+          {showThesis && <ThesisPanel symbol={item.symbol} quote={q} aiEnabled={aiEnabled} />}
+        </>
       )}
     </li>
   );
