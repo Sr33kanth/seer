@@ -22,4 +22,14 @@ export async function ensureSchema(): Promise<void> {
       added_at BIGINT  NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW())::BIGINT
     )
   `;
+  await sql`
+    CREATE TABLE IF NOT EXISTS theses (
+      id         BIGSERIAL PRIMARY KEY,
+      symbol     TEXT      NOT NULL,
+      thesis     TEXT      NOT NULL,
+      result     JSONB     NOT NULL,
+      created_at BIGINT    NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW())::BIGINT
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS theses_symbol_idx ON theses (symbol, created_at DESC)`;
 }

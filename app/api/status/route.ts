@@ -25,10 +25,10 @@ export async function GET() {
   }
 
   // AI
-  const hasAnthropicKey = !!process.env.ANTHROPIC_API_KEY;
+  const hasOpenAIKey = !!process.env.OPENAI_API_KEY;
   checks.ai = {
-    ok: hasAnthropicKey,
-    detail: hasAnthropicKey ? "API key set" : "ANTHROPIC_API_KEY not configured",
+    ok: hasOpenAIKey,
+    detail: hasOpenAIKey ? "API key set" : "OPENAI_API_KEY not configured",
   };
 
   const allOk = Object.values(checks).every((c) => c.ok);

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RichQuote } from "@/lib/yahoo";
+import type { ThesisResult, StoredThesis } from "@/lib/thesis";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -115,19 +116,241 @@ function WeekRange({ low, high, current }: { low?: number; high?: number; curren
   );
 }
 
+// ─── Thesis confidence badge ─────────────────────────────────────────────────
+
+function ConfidenceBadge({ value }: { value: number }) {
+  const color = value >= 70 ? "#4ade80" : value >= 45 ? "#facc15" : "#f87171";
+  return (
+    <span style={{
+      fontFamily: "var(--font-space-mono)",
+      fontSize: 11,
+      color,
+      border: `1px solid ${color}40`,
+      borderRadius: 3,
+      padding: "1px 6px",
+    }}>
+      {value}%
+    </span>
+  );
+}
+
+function VerdictDot({ verdict }: { verdict: "supported" | "challenged" | "insufficient_data" }) {
+  const color = verdict === "supported" ? "#4ade80" : verdict === "challenged" ? "#f87171" : "#6b7280";
+  return <span style={{ width: 6, height: 6, borderRadius: "50%", background: color, display: "inline-block", flexShrink: 0, marginTop: 5 }} />;
+}
+
+function ThesisPanel({ symbol, quote, aiEnabled }: { symbol: string; quote?: RichQuote; aiEnabled: boolean }) {
+  const [thesisInput, setThesisInput] = useState("");
+  const [analyzing, setAnalyzing] = useState(false);
+  const [result, setResult] = useState<ThesisResult | null>(null);
+  const [history, setHistory] = useState<StoredThesis[]>([]);
+  const [error, setError] = useState("");
+  const [tab, setTab] = useState<"new" | "history">("new");
+  const [loadingHistory, setLoadingHistory] = useState(false);
+
+  async function loadHistory() {
+    setLoadingHistory(true);
+    try {
+      const res = await fetch(`/api/thesis/${symbol}`);
+      if (res.ok) setHistory(await res.json());
+    } finally {
+      setLoadingHistory(false);
+    }
+  }
+
+  async function runAnalysis(e: React.FormEvent) {
+    e.preventDefault();
+    if (!thesisInput.trim() || analyzing) return;
+    setAnalyzing(true);
+    setError("");
+    setResult(null);
+    try {
+      const res = await fetch("/api/thesis", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ symbol, thesis: thesisInput.trim(), quote }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setResult(data.result);
+        setHistory(prev => [data, ...prev].slice(0, 10));
+      } else {
+        setError(data.error ?? "Analysis failed");
+      }
+    } catch (e) {
+      setError(String(e));
+    }
+    setAnalyzing(false);
+  }
+
+  return (
+    <div style={{ borderTop: "1px solid var(--border-subtle)", padding: "16px 20px 20px 39px" }}>
+      {/* Tab bar */}
+      <div style={{ display: "flex", gap: 16, marginBottom: 14 }}>
+        {(["new", "history"] as const).map(t => (
+          <button
+            key={t}
+            onClick={() => { setTab(t); if (t === "history" && history.length === 0) loadHistory(); }}
+            style={{ background: "none", border: "none", padding: "0 0 4px", cursor: "pointer", fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: tab === t ? "var(--gold)" : "var(--text-muted)", borderBottom: tab === t ? "1px solid var(--gold)" : "1px solid transparent", transition: "all 0.15s" }}
+          >
+            {t === "new" ? "Analyze Thesis" : "History"}
+          </button>
+        ))}
+      </div>
+
+      {tab === "new" && (
+        <>
+          {!aiEnabled ? (
+            <div style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: "var(--font-space-mono)", padding: "10px 12px", background: "var(--bg)", borderRadius: 4 }}>
+              Set OPENAI_API_KEY in .env.local to enable analysis
+            </div>
+          ) : (
+            <form onSubmit={runAnalysis}>
+              <textarea
+                value={thesisInput}
+                onChange={e => setThesisInput(e.target.value)}
+                placeholder={`e.g. "${symbol} benefits from AI capex tailwinds and is undervalued relative to peers on EV/EBITDA"`}
+                rows={3}
+                style={{ width: "100%", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 6, padding: "10px 12px", fontSize: 13, fontFamily: "var(--font-outfit), system-ui", color: "var(--text)", resize: "vertical", outline: "none", boxSizing: "border-box", transition: "border-color 0.2s", lineHeight: 1.5 }}
+                onFocus={e => { e.target.style.borderColor = "var(--gold-dim)"; }}
+                onBlur={e => { e.target.style.borderColor = "var(--border)"; }}
+              />
+              <div style={{ marginTop: 8, display: "flex", gap: 8, alignItems: "center" }}>
+                <button
+                  type="submit"
+                  disabled={analyzing || !thesisInput.trim()}
+                  style={{ background: thesisInput.trim() && !analyzing ? "var(--gold)" : "transparent", border: "1px solid", borderColor: thesisInput.trim() && !analyzing ? "var(--gold)" : "var(--border)", color: thesisInput.trim() && !analyzing ? "#060910" : "var(--text-muted)", borderRadius: 5, padding: "8px 18px", fontSize: 12, fontWeight: 600, letterSpacing: "0.05em", textTransform: "uppercase", cursor: thesisInput.trim() && !analyzing ? "pointer" : "not-allowed", transition: "all 0.2s" }}
+                >
+                  {analyzing ? "Analyzing…" : "Run Analysis"}
+                </button>
+                {analyzing && <span style={{ fontSize: 12, color: "var(--text-muted)" }}>GPT-4o is stress-testing your thesis…</span>}
+                {error && <span style={{ fontSize: 12, color: "var(--danger)" }}>{error}</span>}
+              </div>
+            </form>
+          )}
+
+          {result && <ThesisResultView result={result} />}
+        </>
+      )}
+
+      {tab === "history" && (
+        <div>
+          {loadingHistory ? (
+            <div style={{ fontSize: 13, color: "var(--text-muted)" }}>Loading…</div>
+          ) : history.length === 0 ? (
+            <div style={{ fontSize: 13, color: "var(--text-muted)", fontStyle: "italic" }}>No analyses yet for {symbol}</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {history.map(h => (
+                <div key={h.id} style={{ padding: "12px 14px", background: "var(--bg)", borderRadius: 6, border: "1px solid var(--border-subtle)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8, gap: 8 }}>
+                    <div style={{ fontSize: 12, color: "var(--text)", flex: 1, lineHeight: 1.4, fontStyle: "italic" }}>"{h.thesis}"</div>
+                    <ConfidenceBadge value={h.result.overallConfidence} />
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{new Date(h.created_at * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</div>
+                  <button
+                    onClick={() => { setTab("new"); setThesisInput(h.thesis); setResult(h.result); }}
+                    style={{ marginTop: 6, fontSize: 11, color: "var(--gold)", background: "none", border: "none", cursor: "pointer", padding: 0, letterSpacing: "0.05em" }}
+                  >
+                    View full analysis →
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ThesisResultView({ result }: { result: ThesisResult }) {
+  return (
+    <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 14 }}>
+      {/* Overall confidence */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <span style={{ fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--text-muted)" }}>Overall Confidence</span>
+        <ConfidenceBadge value={result.overallConfidence} />
+      </div>
+
+      {/* Sub-claims */}
+      <div>
+        <div style={{ fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--text-muted)", marginBottom: 8 }}>Sub-Claims</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {result.subClaims.map((sc, i) => (
+            <div key={i} style={{ display: "flex", gap: 10, padding: "10px 12px", background: "var(--bg)", borderRadius: 6, border: "1px solid var(--border-subtle)" }}>
+              <VerdictDot verdict={sc.verdict} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12, color: "var(--text)", lineHeight: 1.4, marginBottom: 3 }}>{sc.claim}</div>
+                <div style={{ fontSize: 11, color: "var(--text-secondary)", lineHeight: 1.5 }}>{sc.evidence}</div>
+              </div>
+              <ConfidenceBadge value={sc.confidence} />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Bull / Bear */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <div style={{ padding: "12px 14px", background: "var(--bg)", borderRadius: 6, borderLeft: "3px solid #4ade8060", border: "1px solid var(--border-subtle)", borderLeftColor: "#4ade8060" }}>
+          <div style={{ fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "#4ade80", marginBottom: 6 }}>Bull Case</div>
+          <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.6 }}>{result.bullCase}</div>
+        </div>
+        <div style={{ padding: "12px 14px", background: "var(--bg)", borderRadius: 6, border: "1px solid var(--border-subtle)", borderLeftWidth: 3, borderLeftColor: "#f8717160" }}>
+          <div style={{ fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "#f87171", marginBottom: 6 }}>Bear Case</div>
+          <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.6 }}>{result.bearCase}</div>
+        </div>
+      </div>
+
+      {/* Invalidation + Monitoring */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <div>
+          <div style={{ fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--text-muted)", marginBottom: 6 }}>Invalidation Triggers</div>
+          <ul style={{ margin: 0, padding: "0 0 0 14px", fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.8 }}>
+            {result.invalidationTriggers.map((t, i) => <li key={i}>{t}</li>)}
+          </ul>
+        </div>
+        <div>
+          <div style={{ fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--text-muted)", marginBottom: 6 }}>Monitor</div>
+          <ul style={{ margin: 0, padding: "0 0 0 14px", fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.8 }}>
+            {result.monitoring.map((m, i) => <li key={i}>{m}</li>)}
+          </ul>
+        </div>
+      </div>
+
+      {/* Entry / Stop / Size */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+        {[
+          { label: "Entry", value: result.entry, color: "#4ade80" },
+          { label: "Stop", value: result.stop, color: "#f87171" },
+          { label: "Position Size", value: result.positionSize, color: "var(--gold)" },
+        ].map(({ label, value, color }) => (
+          <div key={label} style={{ padding: "10px 12px", background: "var(--bg)", borderRadius: 6, border: "1px solid var(--border-subtle)" }}>
+            <div style={{ fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--text-muted)", marginBottom: 4 }}>{label}</div>
+            <div style={{ fontSize: 11, color, lineHeight: 1.5 }}>{value}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function TickerCard({
   item,
   quote,
   removing,
   isNew,
   onRemove,
+  aiEnabled,
 }: {
   item: WatchlistItem;
   quote?: RichQuote;
   removing: boolean;
   isNew: boolean;
   onRemove: () => void;
+  aiEnabled: boolean;
 }) {
+  const [showThesis, setShowThesis] = useState(false);
   const q = quote;
   const isUp = (q?.changePct ?? 0) > 0;
   const isDown = (q?.changePct ?? 0) < 0;
@@ -241,7 +464,20 @@ function TickerCard({
           {q.institutionPct != null && <Stat label="Institution %" value={fmtPct(q.institutionPct)} />}
           {q.shortRatio != null && <Stat label="Short Ratio" value={q.shortRatio.toFixed(1)} />}
           {q.pegRatio != null && <Stat label="PEG Ratio" value={q.pegRatio.toFixed(2)} />}
+          {/* Thesis toggle */}
+          <div style={{ gridColumn: "1 / -1", marginTop: 4 }}>
+            <button
+              onClick={() => setShowThesis(v => !v)}
+              style={{ background: "none", border: "1px solid var(--border)", borderRadius: 5, padding: "7px 14px", fontSize: 11, letterSpacing: "0.07em", textTransform: "uppercase", color: showThesis ? "var(--gold)" : "var(--text-secondary)", cursor: "pointer", transition: "all 0.15s", borderColor: showThesis ? "var(--gold-dim)" : "var(--border)" }}
+            >
+              {showThesis ? "▲ Hide Thesis Analysis" : "▼ Analyze Thesis"}
+            </button>
+          </div>
         </div>
+      )}
+
+      {showThesis && q && !q.error && (
+        <ThesisPanel symbol={item.symbol} quote={q} aiEnabled={aiEnabled} />
       )}
     </li>
   );
@@ -383,6 +619,7 @@ export default function Home() {
   }
 
   const count = items.length;
+  const aiEnabled = sysStatus?.checks?.ai?.ok === true;
   const statusColor = sysStatus?.status === "ok" ? "#4ade80" : sysStatus?.status === "degraded" ? "#facc15" : "var(--text-muted)";
 
   return (
@@ -465,7 +702,7 @@ export default function Home() {
             </div>
           ) : (
             <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 10 }}>
-              {items.map((item, i) => (
+              {items.map((item) => (
                 <TickerCard
                   key={item.symbol}
                   item={item}
@@ -473,6 +710,7 @@ export default function Home() {
                   removing={removing === item.symbol}
                   isNew={item.symbol === newSymbol}
                   onRemove={() => handleRemove(item.symbol)}
+                  aiEnabled={aiEnabled}
                 />
               ))}
             </ul>
@@ -494,7 +732,7 @@ export default function Home() {
                     <span style={{ width: 7, height: 7, borderRadius: "50%", background: val.ok ? "#4ade80" : "#f87171", flexShrink: 0, boxShadow: val.ok ? "0 0 6px #4ade80" : "none" }} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 13, color: "var(--text)", textTransform: "capitalize" }}>
-                        {key === "yahooFinance" ? "Yahoo Finance" : key === "ai" ? "AI (Anthropic)" : key === "db" ? "Database" : key}
+                        {key === "yahooFinance" ? "Yahoo Finance" : key === "ai" ? "AI (OpenAI)" : key === "db" ? "Database" : key}
                       </div>
                       {val.detail && (
                         <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -550,38 +788,24 @@ export default function Home() {
             )}
           </section>
 
-          {/* Suggestions */}
+          {/* Thesis analysis hint */}
           <section>
             <h2 style={{ fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--text-muted)", margin: "0 0 14px", fontWeight: 400 }}>
-              AI Suggestions
+              Thesis Analysis
             </h2>
-            {sysStatus?.checks?.ai?.ok ? (
-              <div style={{ padding: "14px", background: "var(--surface)", borderRadius: 6, border: "1px solid var(--border)", borderLeft: "3px solid var(--gold)" }}>
-                <div style={{ fontSize: 13, color: "var(--text)", marginBottom: 6 }}>Ready to analyze</div>
+            {aiEnabled ? (
+              <div style={{ padding: "12px 14px", background: "var(--surface)", borderRadius: 6, border: "1px solid var(--border-subtle)", borderLeft: "3px solid var(--gold)" }}>
                 <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.6 }}>
-                  Seer can analyze your {count} watched symbol{count !== 1 ? "s" : ""} and surface patterns, valuation signals, and momentum cues.
+                  GPT-4o is ready. Open any ticker card and click <strong style={{ color: "var(--text)" }}>Analyze Thesis</strong> to stress-test an investment thesis.
                 </div>
-                <button style={{ marginTop: 12, width: "100%", background: "var(--gold)", border: "none", borderRadius: 4, color: "#060910", fontSize: 12, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", padding: "9px", cursor: "pointer" }}>
-                  Run Analysis →
-                </button>
               </div>
             ) : (
-              <div style={{ padding: "14px", background: "var(--surface)", borderRadius: 6, border: "1px solid var(--border-subtle)" }}>
-                <div style={{ fontSize: 13, color: "var(--text)", marginBottom: 6 }}>
-                  Not yet configured
-                </div>
+              <div style={{ padding: "12px 14px", background: "var(--surface)", borderRadius: 6, border: "1px solid var(--border-subtle)" }}>
                 <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 10 }}>
-                  Seer uses Claude (Anthropic) to analyse your watchlist and surface:
+                  Set <code style={{ fontFamily: "var(--font-space-mono)", fontSize: 11, background: "var(--bg)", padding: "1px 5px", borderRadius: 3 }}>OPENAI_API_KEY</code> in <code style={{ fontFamily: "var(--font-space-mono)", fontSize: 11, background: "var(--bg)", padding: "1px 5px", borderRadius: 3 }}>.env.local</code> to enable GPT-4o thesis analysis.
                 </div>
-                <ul style={{ margin: "0 0 12px", padding: "0 0 0 16px", fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.8, listStyleType: "disc" }}>
-                  <li>Valuation signals (P/E vs sector)</li>
-                  <li>Momentum & trend analysis</li>
-                  <li>Risk flags (beta, short interest)</li>
-                  <li>Earnings calendar alerts</li>
-                  <li>Buy / hold / watch suggestions</li>
-                </ul>
-                <div style={{ fontSize: 11, color: "var(--text-muted)", padding: "10px 12px", background: "var(--bg)", borderRadius: 4, fontFamily: "var(--font-space-mono)", lineHeight: 1.6 }}>
-                  Set ANTHROPIC_API_KEY in your<br />.env.local to enable
+                <div style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.7 }}>
+                  Decomposes your thesis into falsifiable sub-claims, runs a bull/bear debate, and suggests entry, stop, and position size.
                 </div>
               </div>
             )}
