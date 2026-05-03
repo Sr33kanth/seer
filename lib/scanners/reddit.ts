@@ -1,6 +1,6 @@
 import type { Emit, Signal } from "./types";
 
-const SUBREDDITS = ["investing", "SecurityAnalysis", "stocks"];
+const SUBREDDITS = ["wallstreetbets", "investing", "SecurityAnalysis", "stocks"];
 
 // Match $TICKER or standalone 2-5 letter uppercase words that look like tickers
 // Avoid common false positives (I, A, IPO, ETF, etc.)
@@ -13,20 +13,28 @@ const STOPWORDS = new Set([
   "YOLO","HODL","BTC","ETH","NFT","DAO","APR","APY","TVL","DEX","CEX",
 ]);
 
-interface RedditPost {
-  data: {
-    title: string;
-    selftext?: string;
-    score: number;
-    num_comments: number;
-    url: string;
-    permalink: string;
-    subreddit: string;
-  };
+interface RssEntry {
+  title: string;
+  link: string;
+  content: string;
 }
 
-interface RedditListing {
-  data: { children: RedditPost[] };
+function parseRssEntries(xml: string): RssEntry[] {
+  const entries: RssEntry[] = [];
+  const entryRe = /<entry>([\s\S]*?)<\/entry>/g;
+  let m: RegExpExecArray | null;
+  while ((m = entryRe.exec(xml)) !== null) {
+    const block = m[1];
+    const titleMatch = block.match(/<title[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>/);
+    const linkMatch = block.match(/<link[^>]+href="([^"]+)"/);
+    const contentMatch = block.match(/<content[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/content>/);
+    entries.push({
+      title: titleMatch?.[1]?.trim() ?? "",
+      link: linkMatch?.[1]?.trim() ?? "",
+      content: contentMatch?.[1]?.replace(/<[^>]+>/g, " ").trim() ?? "",
+    });
+  }
+  return entries;
 }
 
 function extractTickers(text: string): string[] {
@@ -42,44 +50,41 @@ function extractTickers(text: string): string[] {
 
 export async function runRedditScanner(emit: Emit, scanId: string): Promise<Signal[]> {
   const id = "reddit";
-  emit({ type: "scanner_start", id, name: "Reddit — Curated Subs", description: "Scans r/investing, r/SecurityAnalysis, r/stocks hot posts for ticker mentions. Weights by upvotes." });
+  emit({ type: "scanner_start", id, name: "Reddit — Curated Subs", description: "Scans r/wallstreetbets, r/investing, r/SecurityAnalysis, r/stocks via RSS for ticker mentions." });
 
   const t0 = Date.now();
   const tickerMentions = new Map<string, { score: number; posts: string[]; urls: string[] }>();
 
   for (const sub of SUBREDDITS) {
-    emit({ type: "log", id, message: `Fetching r/${sub} hot posts…` });
+    emit({ type: "log", id, message: `Fetching r/${sub} RSS feed…` });
 
-    let listing: RedditListing;
+    let entries: RssEntry[];
     try {
-      const res = await fetch(`https://www.reddit.com/r/${sub}/hot.json?limit=50`, {
+      const res = await fetch(`https://www.reddit.com/r/${sub}.rss?limit=50`, {
         headers: { "User-Agent": "Seer/1.0 research-aggregator" },
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      listing = await res.json() as RedditListing;
+      const xml = await res.text();
+      entries = parseRssEntries(xml);
     } catch (e) {
       emit({ type: "log", id, message: `  ✗ r/${sub} failed: ${String(e)}` });
       continue;
     }
 
-    const posts = listing.data?.children ?? [];
-    emit({ type: "log", id, message: `  ${posts.length} posts — extracting tickers…` });
+    emit({ type: "log", id, message: `  ${entries.length} posts — extracting tickers…` });
 
-    for (const post of posts) {
-      const d = post.data;
-      const text = `${d.title} ${d.selftext ?? ""}`;
+    for (const entry of entries) {
+      const text = `${entry.title} ${entry.content}`;
       const tickers = extractTickers(text);
-      const postScore = d.score + d.num_comments * 2; // weight comments higher
 
       for (const ticker of tickers) {
         if (!tickerMentions.has(ticker)) {
           tickerMentions.set(ticker, { score: 0, posts: [], urls: [] });
         }
-        const entry = tickerMentions.get(ticker)!;
-        entry.score += postScore;
-        if (!entry.posts.includes(d.title)) entry.posts.push(d.title);
-        const url = `https://reddit.com${d.permalink}`;
-        if (!entry.urls.includes(url)) entry.urls.push(url);
+        const mention = tickerMentions.get(ticker)!;
+        mention.score += 1;
+        if (!mention.posts.includes(entry.title)) mention.posts.push(entry.title);
+        if (entry.link && !mention.urls.includes(entry.link)) mention.urls.push(entry.link);
       }
     }
   }
